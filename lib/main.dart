@@ -40,16 +40,13 @@ class DatabaseHelper {
     );
   }
 
+  static ConnectionSettings? get currentSettings => _settings;
+
+  static bool get isConfigured => _settings != null;
+
   static Future<MySqlConnection?> getConnection() async {
     if (_settings == null) {
-      configure(
-        // Conectar no WIFI da rede IoT
-        host: '192.168.18.13',
-        port: 3306,
-        user: 'root',
-        password: 'root',
-        db: 'db_prod',
-      );
+      throw Exception('Configuração do banco de dados não foi definida');
     }
 
     try {
@@ -208,12 +205,93 @@ class FilterPage extends StatefulWidget {
 class _FilterPageState extends State<FilterPage> {
   final TextEditingController dateController = TextEditingController();
   final TextEditingController colorController = TextEditingController();
+
+  // Controladores para configuração do banco
+  final TextEditingController hostController = TextEditingController(
+    text: '192.168.18.13',
+  );
+  final TextEditingController portController = TextEditingController(
+    text: '3306',
+  );
+  final TextEditingController userController = TextEditingController(
+    text: 'root',
+  );
+  final TextEditingController passwordController = TextEditingController(
+    text: 'root',
+  );
+  final TextEditingController dbController = TextEditingController(
+    text: 'db_prod',
+  );
+
   String? selectedDate;
   String? selectedColor;
   bool _testingConnection = false;
   String? _connectionStatus;
+  bool _showDatabaseConfig = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Aplicar configuração padrão se não houver nenhuma
+    if (!DatabaseHelper.isConfigured) {
+      _applyDatabaseConfig();
+    } else {
+      // Carregar configuração atual
+      _loadCurrentConfig();
+    }
+  }
+
+  void _loadCurrentConfig() {
+    final settings = DatabaseHelper.currentSettings;
+    if (settings != null) {
+      hostController.text = settings.host;
+      portController.text = settings.port.toString();
+      userController.text = settings.user!;
+      passwordController.text = settings.password ?? '';
+      dbController.text = settings.db!;
+    }
+  }
+
+  void _applyDatabaseConfig() {
+    try {
+      int port = int.parse(portController.text);
+      DatabaseHelper.configure(
+        host: hostController.text,
+        port: port,
+        user: userController.text,
+        password: passwordController.text,
+        db: dbController.text,
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Configuração do banco aplicada com sucesso!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      setState(() {
+        _showDatabaseConfig = false;
+        _connectionStatus = null;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro na configuração: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   Future<void> _testDatabaseConnection() async {
+    if (!DatabaseHelper.isConfigured) {
+      setState(() {
+        _connectionStatus = 'Configure o banco de dados primeiro ⚠️';
+      });
+      return;
+    }
+
     setState(() {
       _testingConnection = true;
       _connectionStatus = null;
@@ -242,10 +320,19 @@ class _FilterPageState extends State<FilterPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Filtros de Produtos'),
+        title: Text('Filtros e Configurações'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: Icon(Icons.settings),
+            onPressed: () {
+              setState(() {
+                _showDatabaseConfig = !_showDatabaseConfig;
+              });
+            },
+            tooltip: 'Configurar Banco',
+          ),
           IconButton(
             icon: Icon(Icons.wifi_tethering),
             onPressed: _testDatabaseConnection,
@@ -253,154 +340,341 @@ class _FilterPageState extends State<FilterPage> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Status da conexão
-            if (_testingConnection || _connectionStatus != null)
-              Card(
-                color:
-                    _connectionStatus?.contains('OK') == true
-                        ? Colors.green[50]
-                        : Colors.red[50],
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    children: [
-                      if (_testingConnection)
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Configuração do Banco de Dados
+              if (_showDatabaseConfig)
+                Card(
+                  elevation: 4,
+                  color: Colors.orange[50],
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.storage, color: Colors.orange[800]),
+                            SizedBox(width: 8),
+                            Text(
+                              'Configuração do Banco de Dados',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange[800],
+                              ),
+                            ),
+                          ],
                         ),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _testingConnection
-                              ? 'Testando conexão...'
-                              : _connectionStatus ?? '',
-                          style: TextStyle(
-                            color:
-                                _connectionStatus?.contains('OK') == true
-                                    ? Colors.green[800]
-                                    : Colors.red[800],
+                        SizedBox(height: 16),
+                        TextField(
+                          controller: hostController,
+                          decoration: InputDecoration(
+                            labelText: 'Host/IP do Servidor',
+                            hintText: 'Ex: 192.168.1.100',
+                            prefixIcon: Icon(Icons.computer),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
                         ),
+                        SizedBox(height: 12),
+                        TextField(
+                          controller: portController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'Porta',
+                            hintText: 'Ex: 3306',
+                            prefixIcon: Icon(Icons.power_outlined),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        TextField(
+                          controller: userController,
+                          decoration: InputDecoration(
+                            labelText: 'Usuário',
+                            hintText: 'Ex: root',
+                            prefixIcon: Icon(Icons.person),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        TextField(
+                          controller: passwordController,
+                          obscureText: true,
+                          decoration: InputDecoration(
+                            labelText: 'Senha',
+                            prefixIcon: Icon(Icons.lock),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 12),
+                        TextField(
+                          controller: dbController,
+                          decoration: InputDecoration(
+                            labelText: 'Nome do Banco',
+                            hintText: 'Ex: db_prod',
+                            prefixIcon: Icon(
+                              Icons.miscellaneous_services_rounded,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _applyDatabaseConfig,
+                                icon: Icon(Icons.save),
+                                label: Text('Aplicar Configuração'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _showDatabaseConfig = false;
+                                });
+                              },
+                              child: Icon(Icons.close),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              if (_showDatabaseConfig) SizedBox(height: 16),
+
+              // Status da conexão
+              if (_testingConnection || _connectionStatus != null)
+                Card(
+                  color:
+                      _connectionStatus?.contains('OK') == true
+                          ? Colors.green[50]
+                          : _connectionStatus?.contains('⚠️') == true
+                          ? Colors.orange[50]
+                          : Colors.red[50],
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Row(
+                      children: [
+                        if (_testingConnection)
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _testingConnection
+                                ? 'Testando conexão...'
+                                : _connectionStatus ?? '',
+                            style: TextStyle(
+                              color:
+                                  _connectionStatus?.contains('OK') == true
+                                      ? Colors.green[800]
+                                      : _connectionStatus?.contains('⚠️') ==
+                                          true
+                                      ? Colors.orange[800]
+                                      : Colors.red[800],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              if (_connectionStatus != null) SizedBox(height: 16),
+
+              // Status da configuração atual
+              Card(
+                color:
+                    DatabaseHelper.isConfigured
+                        ? Colors.blue[50]
+                        : Colors.grey[50],
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            DatabaseHelper.isConfigured
+                                ? Icons.check_circle
+                                : Icons.warning,
+                            color:
+                                DatabaseHelper.isConfigured
+                                    ? Colors.blue
+                                    : Colors.orange,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Status da Configuração',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  DatabaseHelper.isConfigured
+                                      ? Colors.blue[800]
+                                      : Colors.orange[800],
+                            ),
+                          ),
+                        ],
                       ),
+                      SizedBox(height: 8),
+                      if (DatabaseHelper.isConfigured) ...[
+                        Text('✅ Banco configurado'),
+                        Text('Host: ${DatabaseHelper.currentSettings?.host}'),
+                        Text('Banco: ${DatabaseHelper.currentSettings?.db}'),
+                      ] else ...[
+                        Text(
+                          '⚠️ Configure o banco de dados antes de continuar',
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
 
-            if (_connectionStatus != null) SizedBox(height: 16),
+              SizedBox(height: 16),
 
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Configurar Filtros',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue[800],
-                      ),
-                    ),
-                    SizedBox(height: 20),
-                    TextField(
-                      controller: dateController,
-                      decoration: InputDecoration(
-                        labelText: 'Data (YYYY-MM-DD)',
-                        hintText: 'Ex: 2024-01-15',
-                        prefixIcon: Icon(Icons.calendar_today),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+              // Filtros de Dados
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Filtros de Produtos',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[800],
                         ),
                       ),
-                      onChanged: (value) {
-                        selectedDate = value.isEmpty ? null : value;
-                      },
-                    ),
-                    SizedBox(height: 16),
-                    TextField(
-                      controller: colorController,
-                      decoration: InputDecoration(
-                        labelText: 'Cor',
-                        hintText: 'Ex: Azul, Vermelho, Verde',
-                        prefixIcon: Icon(Icons.color_lens),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                      SizedBox(height: 20),
+                      TextField(
+                        controller: dateController,
+                        decoration: InputDecoration(
+                          labelText: 'Data (YYYY-MM-DD)',
+                          hintText: 'Ex: 2024-01-15',
+                          prefixIcon: Icon(Icons.calendar_today),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
+                        onChanged: (value) {
+                          selectedDate = value.isEmpty ? null : value;
+                        },
                       ),
-                      onChanged: (value) {
-                        selectedColor = value.isEmpty ? null : value;
-                      },
-                    ),
-                  ],
+                      SizedBox(height: 16),
+                      TextField(
+                        controller: colorController,
+                        decoration: InputDecoration(
+                          labelText: 'Cor',
+                          hintText: 'Ex: Azul, Vermelho, Verde',
+                          prefixIcon: Icon(Icons.color_lens),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onChanged: (value) {
+                          selectedColor = value.isEmpty ? null : value;
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: () {
-                widget.onFiltersChanged(selectedDate, selectedColor);
-                widget.onNavigateToCharts();
-              },
-              icon: Icon(Icons.search),
-              label: Text('Aplicar Filtros e Ver Gráfico'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 15),
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+              SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed:
+                    DatabaseHelper.isConfigured
+                        ? () {
+                          widget.onFiltersChanged(selectedDate, selectedColor);
+                          widget.onNavigateToCharts();
+                        }
+                        : null,
+                icon: Icon(Icons.search),
+                label: Text('Aplicar Filtros e Ver Gráfico'),
+                style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(vertical: 15),
+                  backgroundColor:
+                      DatabaseHelper.isConfigured ? Colors.blue : Colors.grey,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
-            ),
-            SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () {
-                dateController.clear();
-                colorController.clear();
-                selectedDate = null;
-                selectedColor = null;
-                widget.onFiltersChanged(null, null);
-              },
-              icon: Icon(Icons.clear),
-              label: Text('Limpar Filtros'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: 15),
-                backgroundColor: Colors.grey[600],
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+              SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  dateController.clear();
+                  colorController.clear();
+                  selectedDate = null;
+                  selectedColor = null;
+                  widget.onFiltersChanged(null, null);
+                },
+                icon: Icon(Icons.clear),
+                label: Text('Limpar Filtros'),
+                style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(vertical: 15),
+                  backgroundColor: Colors.grey[600],
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
-            ),
-            Spacer(),
-            Card(
-              color: Colors.blue[50],
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  children: [
-                    Icon(Icons.info, color: Colors.blue),
-                    SizedBox(height: 8),
-                    Text(
-                      'Dica: Você pode filtrar por data, cor ou ambos. Deixe em branco para ver todos os produtos.',
-                      style: TextStyle(color: Colors.blue[800]),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+              SizedBox(height: 16),
+              Card(
+                color: Colors.blue[50],
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    children: [
+                      Icon(Icons.info, color: Colors.blue),
+                      SizedBox(height: 8),
+                      Text(
+                        'Dicas:\n• Configure o banco de dados primeiro\n• Teste a conexão antes de aplicar filtros\n• Você pode filtrar por data, cor ou ambos\n• Deixe em branco para ver todos os produtos',
+                        style: TextStyle(color: Colors.blue[800]),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -447,261 +721,319 @@ class _ChartsPageState extends State<ChartsPage> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Mostrar filtros ativos
-            if (widget.selectedDate != null || widget.selectedColor != null)
-              Card(
-                color: Colors.blue[50],
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Filtros Aplicados:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[800],
-                        ),
-                      ),
-                      if (widget.selectedDate != null)
-                        Text('• Data: ${widget.selectedDate}'),
-                      if (widget.selectedColor != null)
-                        Text('• Cor: ${widget.selectedColor}'),
-                    ],
-                  ),
-                ),
-              ),
-            SizedBox(height: 16),
-            Expanded(
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: fetchProdutos(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text('Carregando dados do banco...'),
-                        ],
-                      ),
-                    );
-                  } else if (snapshot.hasError) {
-                    return Center(
-                      child: Card(
-                        color: Colors.red[50],
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.error, color: Colors.red, size: 48),
-                              SizedBox(height: 8),
-                              Text(
-                                'Erro ao carregar dados',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red[800],
-                                ),
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                '${snapshot.error}',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.red[700]),
-                              ),
-                              SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () {
-                                  setState(() {});
-                                },
-                                child: Text('Tentar Novamente'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.inbox, size: 48, color: Colors.grey),
-                              SizedBox(height: 8),
-                              Text(
-                                'Nenhum produto encontrado',
-                                style: TextStyle(fontSize: 18),
-                              ),
-                              Text(
-                                'Tente ajustar os filtros',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  } else {
-                    List<Map<String, dynamic>> produtos = snapshot.data!;
-
-                    // Contar produtos por cor
-                    Map<String, int> colorCount = {};
-                    for (var produto in produtos) {
-                      String cor = produto['cor'] ?? 'Sem cor';
-                      colorCount[cor] = (colorCount[cor] ?? 0) + 1;
-                    }
-
-                    // Criar dados para o gráfico
-                    List<BarChartGroupData> barGroups = [];
-                    int index = 0;
-                    colorCount.entries.forEach((entry) {
-                      barGroups.add(
-                        BarChartGroupData(
-                          x: index,
-                          barRods: [
-                            BarChartRodData(
-                              toY: entry.value.toDouble(),
-                              color: _getColorForName(entry.key),
-                              width: 20,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ],
-                        ),
-                      );
-                      index++;
-                    });
-
-                    return Column(
+      body:
+          !DatabaseHelper.isConfigured
+              ? Center(
+                child: Card(
+                  color: Colors.orange[50],
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
+                        Icon(Icons.settings, size: 48, color: Colors.orange),
+                        SizedBox(height: 8),
                         Text(
-                          'Produtos por Cor (${produtos.length} total)',
+                          'Configure o Banco de Dados',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
+                            color: Colors.orange[800],
                           ),
                         ),
-                        SizedBox(height: 16),
-                        Expanded(
-                          child: BarChart(
-                            BarChartData(
-                              backgroundColor: Colors.grey[200],
-                              barGroups: barGroups,
-                              titlesData: FlTitlesData(
-                                leftTitles: AxisTitles(
-                                  sideTitles: SideTitles(
-                                    showTitles: true,
-                                    reservedSize: 40,
-                                  ),
-                                ),
-                                bottomTitles: AxisTitles(
-                                  sideTitles: SideTitles(
-                                    showTitles: true,
-                                    reservedSize: 40,
-                                    getTitlesWidget: (value, meta) {
-                                      if (value.toInt() <
-                                          colorCount.keys.length) {
-                                        return Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 8.0,
-                                          ),
-                                          child: Text(
-                                            colorCount.keys.elementAt(
-                                              value.toInt(),
-                                            ),
-                                            style: TextStyle(fontSize: 10),
-                                          ),
-                                        );
-                                      }
-                                      return Text('');
-                                    },
-                                  ),
-                                ),
-                                topTitles: AxisTitles(
-                                  sideTitles: SideTitles(showTitles: false),
-                                ),
-                                rightTitles: AxisTitles(
-                                  sideTitles: SideTitles(showTitles: false),
-                                ),
-                              ),
-                              borderData: FlBorderData(show: true),
-                              gridData: FlGridData(show: true),
-                              maxY:
-                                  colorCount.values.isNotEmpty
-                                      ? colorCount.values
-                                              .reduce((a, b) => a > b ? a : b)
-                                              .toDouble() +
-                                          1
-                                      : 10,
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: 16),
-                        // Lista detalhada
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Total de peças, por cor:',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                SizedBox(height: 8),
-                                ...colorCount.entries
-                                    .map(
-                                      (entry) => Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 2.0,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 16,
-                                              height: 16,
-                                              decoration: BoxDecoration(
-                                                color: _getColorForName(
-                                                  entry.key,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(2),
-                                              ),
-                                            ),
-                                            SizedBox(width: 8),
-                                            Text(
-                                              '${entry.key}: ${entry.value} produtos',
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                              ],
-                            ),
-                          ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Vá para a aba Filtros e configure a conexão com o banco de dados primeiro.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.orange[700]),
                         ),
                       ],
-                    );
-                  }
-                },
+                    ),
+                  ),
+                ),
+              )
+              : Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    // Mostrar filtros ativos
+                    if (widget.selectedDate != null ||
+                        widget.selectedColor != null)
+                      Card(
+                        color: Colors.blue[50],
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Filtros Aplicados:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue[800],
+                                ),
+                              ),
+                              if (widget.selectedDate != null)
+                                Text('• Data: ${widget.selectedDate}'),
+                              if (widget.selectedColor != null)
+                                Text('• Cor: ${widget.selectedColor}'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    SizedBox(height: 16),
+                    Expanded(
+                      child: FutureBuilder<List<Map<String, dynamic>>>(
+                        future: fetchProdutos(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircularProgressIndicator(),
+                                  SizedBox(height: 16),
+                                  Text('Carregando dados do banco...'),
+                                ],
+                              ),
+                            );
+                          } else if (snapshot.hasError) {
+                            return Center(
+                              child: Card(
+                                color: Colors.red[50],
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.error,
+                                        color: Colors.red,
+                                        size: 48,
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Erro ao carregar dados',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red[800],
+                                        ),
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        '${snapshot.error}',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.red[700],
+                                        ),
+                                      ),
+                                      SizedBox(height: 16),
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          setState(() {});
+                                        },
+                                        child: Text('Tentar Novamente'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          } else if (!snapshot.hasData ||
+                              snapshot.data!.isEmpty) {
+                            return Center(
+                              child: Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.inbox,
+                                        size: 48,
+                                        color: Colors.grey,
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Nenhum produto encontrado',
+                                        style: TextStyle(fontSize: 18),
+                                      ),
+                                      Text(
+                                        'Tente ajustar os filtros',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          } else {
+                            List<Map<String, dynamic>> produtos =
+                                snapshot.data!;
+
+                            // Contar produtos por cor
+                            Map<String, int> colorCount = {};
+                            for (var produto in produtos) {
+                              String cor = produto['cor'] ?? 'Sem cor';
+                              colorCount[cor] = (colorCount[cor] ?? 0) + 1;
+                            }
+
+                            // Criar dados para o gráfico
+                            List<BarChartGroupData> barGroups = [];
+                            int index = 0;
+                            colorCount.entries.forEach((entry) {
+                              barGroups.add(
+                                BarChartGroupData(
+                                  x: index,
+                                  barRods: [
+                                    BarChartRodData(
+                                      toY: entry.value.toDouble(),
+                                      color: _getColorForName(entry.key),
+                                      width: 20,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              index++;
+                            });
+
+                            return Column(
+                              children: [
+                                Text(
+                                  'Produtos por Cor (${produtos.length} total)',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: 16),
+                                Expanded(
+                                  child: BarChart(
+                                    BarChartData(
+                                      backgroundColor: Colors.grey[200],
+                                      barGroups: barGroups,
+                                      titlesData: FlTitlesData(
+                                        leftTitles: AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: true,
+                                            reservedSize: 40,
+                                          ),
+                                        ),
+                                        bottomTitles: AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: true,
+                                            reservedSize: 40,
+                                            getTitlesWidget: (value, meta) {
+                                              if (value.toInt() <
+                                                  colorCount.keys.length) {
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 8.0,
+                                                      ),
+                                                  child: Text(
+                                                    colorCount.keys.elementAt(
+                                                      value.toInt(),
+                                                    ),
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                              return Text('');
+                                            },
+                                          ),
+                                        ),
+                                        topTitles: AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: false,
+                                          ),
+                                        ),
+                                        rightTitles: AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: false,
+                                          ),
+                                        ),
+                                      ),
+                                      borderData: FlBorderData(show: true),
+                                      gridData: FlGridData(show: true),
+                                      maxY:
+                                          colorCount.values.isNotEmpty
+                                              ? colorCount.values
+                                                      .reduce(
+                                                        (a, b) => a > b ? a : b,
+                                                      )
+                                                      .toDouble() +
+                                                  1
+                                              : 10,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(height: 16),
+                                // Lista detalhada
+                                Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12.0),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Total de peças, por cor:',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        SizedBox(height: 8),
+                                        ...colorCount.entries
+                                            .map(
+                                              (entry) => Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 2.0,
+                                                    ),
+                                                child: Row(
+                                                  children: [
+                                                    Container(
+                                                      width: 16,
+                                                      height: 16,
+                                                      decoration: BoxDecoration(
+                                                        color: _getColorForName(
+                                                          entry.key,
+                                                        ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              2,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    SizedBox(width: 8),
+                                                    Text(
+                                                      '${entry.key}: ${entry.value} produtos',
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -768,7 +1100,7 @@ class AboutPage extends StatelessWidget {
                     ),
                     SizedBox(height: 12),
                     Text(
-                      'Versão 1.1 - Conexão Direta MySQL',
+                      'Versão 1.2 - Configuração Dinâmica MySQL',
                       style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                     ),
                     SizedBox(height: 16),
@@ -802,7 +1134,11 @@ class AboutPage extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 12),
-                    _buildFeatureItem('🗄️', 'Banco de dados MySQL'),
+                    _buildFeatureItem(
+                      '🗄️',
+                      'Banco de dados MySQL configurável',
+                    ),
+                    _buildFeatureItem('⚙️', 'Configuração dinâmica de conexão'),
                     _buildFeatureItem('📊', 'Gráficos de barras'),
                     _buildFeatureItem('🔍', 'Filtros por data e cor'),
                     _buildFeatureItem('📱', 'Interface simples e responsiva'),
@@ -813,7 +1149,6 @@ class AboutPage extends StatelessWidget {
               ),
             ),
             SizedBox(height: 16),
-            SizedBox(height: 12),
             Spacer(),
             Center(
               child: Text(
