@@ -122,14 +122,11 @@ dependencies:
 
 ## 📱 Screenshots
 
-### Tela de Configuração
-<img src="screenshots/config.png" width="50%">
-
-### Tela de Filtros
-<img src="screenshots/filters.png" width="50%">
-
-### Tela de Gráficos
-<img src="screenshots/charts.png" width="50%">
+<div align="center">
+   <img src="screenshots/config.png" width="250" title="Configuração">
+   <img src="screenshots/charts.png" width="250" title="Gráfico">
+   <img src="screenshots/filters.png" width="250" title="Filtragem">
+</div>
 
 ## ⚙️ Configurações de Rede
 
